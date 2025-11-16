@@ -210,6 +210,8 @@ def continuous_scan_mode(session_counter):
         st.session_state.continuous_scan_active = False
     if 'current_scan_input' not in st.session_state:
         st.session_state.current_scan_input = ""
+    if 'clear_continuous_input' not in st.session_state:
+        st.session_state.clear_continuous_input = False
     
     col1, col2 = st.columns([1, 2])
     with col1:
@@ -225,6 +227,13 @@ def continuous_scan_mode(session_counter):
         st.info("💡 Scan barcodes in the input field below. Press Enter after each scan.")
         
         # Barcode input for continuous mode
+        # If a previous action requested clearing the input, perform that
+        # before the widget is instantiated to avoid modifying the widget
+        # after creation (which raises a StreamlitAPIException).
+        if st.session_state.get('clear_continuous_input', False):
+            st.session_state['continuous_scan_input'] = ""
+            st.session_state['clear_continuous_input'] = False
+
         barcode_input = st.text_input(
             "Scan barcode (press Enter after each scan):",
             key="continuous_scan_input",
@@ -265,8 +274,14 @@ def continuous_scan_mode(session_counter):
                 
                 # Save changes
                 if save_inventory_data(df):
+                    # Instead of modifying the widget's session key after it was
+                    # instantiated (which Streamlit forbids), set a flag to clear
+                    # the input on the next run before the widget is created.
+                    st.session_state['clear_continuous_input'] = True
+                    st.session_state['current_scan_input'] = ""
+
                     st.success(f"✅ Scanned: {updated_product[name_col]} - New Qty: {new_value}")
-                    
+
                     # Auto-clear and rerun
                     time.sleep(0.5)
                     st.rerun()
