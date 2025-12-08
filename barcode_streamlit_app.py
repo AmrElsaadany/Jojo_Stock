@@ -266,7 +266,9 @@ def single_scan_mode(session_counter):
                 with col4:
                     st.metric("New Quantity", int(new_value))
 
-                st.experimental_rerun()
+                st.session_state['single_scan_input'] = ''
+                st.session_state['single_scan_processed'] = ''
+                st.rerun()
 
 def continuous_scan_mode(session_counter):
     """Continuous scan mode"""
@@ -597,7 +599,7 @@ def update_scanned_item_form(session_counter):
                                 st.success(f"Updated scanned quantity for {chosen_barcode} to {new_scanned}")
                                 # Clear manual input field
                                 st.session_state['manual_update_barcode'] = ""
-                                st.experimental_rerun()
+                                st.rerun()
                 except Exception:
                     # If modal is not available (older Streamlit), fall back to simple confirmation
                     st.warning("Confirm update below")
@@ -613,7 +615,7 @@ def update_scanned_item_form(session_counter):
                             )
                             st.success(f"Updated scanned quantity for {chosen_barcode} to {new_scanned}")
                             st.session_state['manual_update_barcode'] = ""
-                            st.experimental_rerun()
+                            st.rerun()
 
 def main():
     """Main application"""
@@ -641,7 +643,7 @@ def main():
         st.markdown("### Quick Actions")
         if st.button("🔄 Reset Current Session", use_container_width=True):
             session_counter.reset_session()
-            st.experimental_rerun()
+            st.rerun()
 
         st.markdown("---")
         st.markdown("*Developed with Streamlit*")
