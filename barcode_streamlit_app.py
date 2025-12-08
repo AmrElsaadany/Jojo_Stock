@@ -193,6 +193,11 @@ def single_scan_mode(session_counter):
         st.session_state.single_scan_input = ""
 
     # Barcode input
+    # If requested, clear the single-scan input BEFORE the widget is created
+    if st.session_state.get("clear_single_input", False):
+        st.session_state['single_scan_input'] = ""
+        st.session_state['clear_single_input'] = False
+
     col1, col2 = st.columns([2, 1])
     with col1:
         barcode_input = st.text_input("Scan or enter barcode:", key="single_scan_input", placeholder="Scan or type barcode and press Enter...")
@@ -266,7 +271,7 @@ def single_scan_mode(session_counter):
                 with col4:
                     st.metric("New Quantity", int(new_value))
 
-                st.session_state['single_scan_input'] = ''
+                st.session_state['clear_single_input'] = True
                 st.session_state['single_scan_processed'] = ''
                 st.rerun()
 
