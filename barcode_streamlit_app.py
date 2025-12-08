@@ -266,9 +266,6 @@ def single_scan_mode(session_counter):
                 with col4:
                     st.metric("New Quantity", int(new_value))
 
-                # Clear the input and processed marker then rerun to reset UI
-                st.session_state['single_scan_input'] = ""
-                st.session_state['single_scan_processed'] = ""
                 st.experimental_rerun()
 
 def continuous_scan_mode(session_counter):
@@ -358,9 +355,6 @@ def continuous_scan_mode(session_counter):
                 if save_inventory_data(df):
                     st.success(f"✅ Scanned: {updated_product.get(name_col, '')} - New Qty: {new_value}")
                     # Clear continuous input so the textbox is ready for the next scan
-                    st.session_state['continuous_scan_input'] = ""
-                    st.session_state['last_continuous_scan'] = ""
-                    st.experimental_rerun()
 
 def show_session_summary(session_counter):
     """Display session summary"""
@@ -376,7 +370,6 @@ def show_session_summary(session_counter):
         if st.button("🔄 Reset Session", use_container_width=True):
             session_counter.reset_session()
             st.success("Session reset successfully!")
-            st.experimental_rerun()
 
     # Display scanned items table
     if st.session_state.scanned_items:
