@@ -298,8 +298,6 @@ def continuous_scan_mode(session_counter):
     # Initialize continuous scan state
     if 'continuous_scan_active' not in st.session_state:
         st.session_state.continuous_scan_active = False
-    if 'last_continuous_scan' not in st.session_state:
-        st.session_state.last_continuous_scan = ""
 
     col1, col2 = st.columns([1, 2])
     with col1:
@@ -320,10 +318,9 @@ def continuous_scan_mode(session_counter):
             placeholder="Scan barcode and press Enter..."
         )
 
-        # Only proceed when a new barcode is entered (different than last processed)
-        if barcode_input and barcode_input.strip() and barcode_input != st.session_state.get('last_continuous_scan', ""):
+        # Process the barcode if entered
+        if barcode_input and barcode_input.strip():
             barcode_input = barcode_input.strip()
-            st.session_state['last_continuous_scan'] = barcode_input
 
             # Convert barcode column to string
             df[barcode_col] = df[barcode_col].astype(str)
@@ -333,7 +330,6 @@ def continuous_scan_mode(session_counter):
 
             if matching_rows.empty:
                 st.error(f"Barcode '{barcode_input}' not found!")
-                st.session_state['last_continuous_scan'] = ""
             else:
                 # Update quantity
                 current_value = df.loc[df[barcode_col] == barcode_input, qty_new_col].iloc[0]
@@ -361,7 +357,9 @@ def continuous_scan_mode(session_counter):
                 # Save changes
                 if save_inventory_data(df):
                     st.success(f"✅ Scanned: {updated_product.get(name_col, '')} - New Qty: {new_value}")
-                    # Clear continuous input so the textbox is ready for the next scan
+                    # Clear the input for the next scan
+                    st.session_state['continuous_scan_input'] = ""
+                    st.rerun()
 
 def show_session_summary(session_counter):
     """Display session summary"""
@@ -556,7 +554,10 @@ def update_scanned_item_form(session_counter):
         # selectbox supports typing to search; if you prefer a different widget, change here
         barcode_choice = st.selectbox("Select barcode (or choose 'Enter manually' to type):", options=["-- Enter manually --"] + combined)
     with col2:
-        manual_barcode = st.text_input("Or enter barcode:", key='manual_update_barcode')
+        manual_barcode = st.text_input("Or enter barcode:", key='manual_update_barcode', value="" if st.session_state.get("clear_manual_barcode", False) else None)
+
+    if st.session_state.get("clear_manual_barcode", False):
+        st.session_state['clear_manual_barcode'] = False
 
     chosen_barcode = None
     if barcode_choice and barcode_choice != "-- Enter manually --":
@@ -585,42 +586,22 @@ def update_scanned_item_form(session_counter):
 
             new_scanned = st.number_input("Set new scanned quantity:", min_value=0, value=int(current_scanned) if str(current_scanned).isdigit() else 0)
 
-            if st.button("Update Quantity", use_container_width=True, key='open_update_modal'):
-                # Open a confirmation modal before applying
-                try:
-                    with st.modal("Confirm Update"):
-                        st.write(f"You are about to set scanned quantity for **{chosen_barcode}** ({product.get(name_col,'')}) from **{current_scanned}** to **{new_scanned}**.")
-                        st.write("This will overwrite the current scanned quantity in inventory.csv.")
-                        if st.button("Confirm Update", key='confirm_update'):
-                            df.loc[df[barcode_col] == chosen_barcode, qty_new_col] = new_scanned
-                            if save_inventory_data(df):
-                                session_counter.add_item(
-                                    barcode=chosen_barcode,
-                                    product_name=product.get(name_col, ''),
-                                    old_qty=current_scanned,
-                                    new_qty=new_scanned,
-                                    action='manual_update'
-                                )
-                                st.success(f"Updated scanned quantity for {chosen_barcode} to {new_scanned}")
-                                # Clear manual input field
-                                st.session_state['manual_update_barcode'] = ""
-                                st.rerun()
-                except Exception:
-                    # If modal is not available (older Streamlit), fall back to simple confirmation
-                    st.warning("Confirm update below")
-                    if st.button("Confirm Update (Fallback)", key='confirm_update_fallback'):
-                        df.loc[df[barcode_col] == chosen_barcode, qty_new_col] = new_scanned
-                        if save_inventory_data(df):
-                            session_counter.add_item(
-                                barcode=chosen_barcode,
-                                product_name=product.get(name_col, ''),
-                                old_qty=current_scanned,
-                                new_qty=new_scanned,
-                                action='manual_update'
-                            )
-                            st.success(f"Updated scanned quantity for {chosen_barcode} to {new_scanned}")
-                            st.session_state['manual_update_barcode'] = ""
-                            st.rerun()
+            confirm_update = st.checkbox("Confirm update of scanned quantity")
+
+            if st.button("Update Quantity", use_container_width=True, disabled=not confirm_update):
+                df.loc[df[barcode_col] == chosen_barcode, qty_new_col] = new_scanned
+                if save_inventory_data(df):
+                    session_counter.add_item(
+                        barcode=chosen_barcode,
+                        product_name=product.get(name_col, ''),
+                        old_qty=current_scanned,
+                        new_qty=new_scanned,
+                        action='manual_update'
+                    )
+                    st.success(f"Updated scanned quantity for {chosen_barcode} to {new_scanned}")
+                    # Clear manual input field
+                    st.session_state['clear_manual_barcode'] = True
+                    st.rerun()
 
 def main():
     """Main application"""
