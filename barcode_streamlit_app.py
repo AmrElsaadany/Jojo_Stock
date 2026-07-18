@@ -83,76 +83,79 @@ class SessionCounter:
 def read_csv_with_encoding(file_path):
     """Read CSV file with Arabic (Windows-1256) encoding.
 
-    Returns a (dataframe, encoding_used) tuple so callers can save the file
-    back with the same encoding it was read with, instead of assuming
-    Windows-1256 unconditionally.
+    Returns a (dataframe, encoding_used) tuple.
     """
-    encodings = ['windows-1256', 'utf-8', 'cp1256', 'iso-8859-6', 'latin1', 'cp1252']
+    encodings = ['utf-8', 'windows-1256', 'cp1256', 'iso-8859-6', 'latin1', 'cp1252']
 
     for enc in encodings:
         try:
-            df = pd.read_csv(file_path, encoding=enc)
-            return df, enc
+            # Tier 1: Clean standard parse
+            return pd.read_csv(file_path, encoding=enc), enc
         except UnicodeDecodeError:
             continue
         except pd.errors.ParserError as pe:
+            # Tier 2: Parser error fallback (Tolerant native Pandas)
             try:
-                st.warning(f"ParserError with encoding {enc}: {pe}. Retrying with python engine and tolerant parsing.")
-                df = pd.read_csv(file_path, encoding=enc, engine='python', sep=',', on_bad_lines='warn')
+                st.warning(f"ParserError with encoding {enc}: {pe}. Retrying with tolerant parsing.")
+                df = pd.read_csv(file_path, encoding=enc, engine='python', on_bad_lines='warn')
                 return df, enc
             except Exception:
-                try:
-                    st.warning(f"ParserError with encoding {enc}: attempting row reconstruction.")
-                    with open(file_path, 'r', encoding=enc, errors='replace') as f:
-                        lines = f.readlines()
+                pass # Fallthrough directly to Tier 3 manual repair for *this* encoding
+            
+            # Tier 3: Manual row reconstruction for corrupted structures
+            try:
+                st.warning(f"ParserError fallback failed for {enc}: attempting row reconstruction.")
+                with open(file_path, 'r', encoding=enc, errors='replace') as f:
+                    lines = f.readlines()
 
-                    if not lines:
-                        raise Exception('Empty file')
+                if not lines:
+                    continue # Skip empty files to next encoding context
 
-                    header_line = lines[0].rstrip('\n').strip()
-                    header_cols = [c.strip() for c in header_line.split(',')]
-                    expected = len(header_cols)
+                header_line = lines[0].rstrip('\n').strip()
+                # Dynamically determine separator if possible, fallback to comma
+                delimiter = ';' if ';' in header_line and ',' not in header_line else ','
+                header_cols = [c.strip() for c in header_line.split(delimiter)]
+                expected = len(header_cols)
 
-                    reconstructed = []
-                    repaired = 0
+                reconstructed = []
+                repaired = 0
 
-                    for ln in lines[1:]:
-                        ln_core = ln.rstrip('\n')
-                        parts = ln_core.split(',')
+                for ln in lines[1:]:
+                    ln_core = ln.rstrip('\n')
+                    parts = ln_core.split(delimiter)
 
-                        if len(parts) == expected:
-                            reconstructed.append(parts)
-                        elif len(parts) > expected:
-                            num_trailing = max(expected - 2, 0)
-                            barcode = parts[0]
-                            if num_trailing > 0:
-                                trailing = parts[-num_trailing:]
-                                name_parts = parts[1:len(parts) - num_trailing]
-                            else:
-                                trailing = []
-                                name_parts = parts[1:]
-
-                            name = ','.join(name_parts).strip()
-                            new_row = [barcode, name] + trailing
-                            while len(new_row) < expected:
-                                new_row.append('')
-                            reconstructed.append(new_row)
-                            repaired += 1
+                    if len(parts) == expected:
+                        reconstructed.append(parts)
+                    elif len(parts) > expected:
+                        num_trailing = max(expected - 2, 0)
+                        barcode = parts[0]
+                        if num_trailing > 0:
+                            trailing = parts[-num_trailing:]
+                            name_parts = parts[1:len(parts) - num_trailing]
                         else:
-                            new_row = parts + [''] * (expected - len(parts))
-                            reconstructed.append(new_row)
+                            trailing = []
+                            name_parts = parts[1:]
 
-                    df = pd.DataFrame(reconstructed, columns=header_cols)
-                    st.info(f"Reconstructed CSV with encoding {enc}. Repaired {repaired} lines.")
-                    return df, enc
-                except Exception as e:
-                    st.warning(f"Row reconstruction failed for encoding {enc}: {e}")
-                    continue
+                        name = delimiter.join(name_parts).strip()
+                        new_row = [barcode, name] + trailing
+                        while len(new_row) < expected:
+                            new_row.append('')
+                        reconstructed.append(new_row)
+                        repaired += 1
+                    else:
+                        new_row = parts + [''] * (expected - len(parts))
+                        reconstructed.append(new_row)
+
+                df = pd.DataFrame(reconstructed, columns=header_cols)
+                st.info(f"Reconstructed CSV with encoding {enc}. Repaired {repaired} lines.")
+                return df, enc
+            except Exception as e:
+                st.error(f"Row reconstruction completely failed for encoding {enc}: {e}")
+                continue
         except Exception:
             continue
 
     raise Exception("Could not read the CSV file with any supported encoding or parsing strategy")
-
 
 def normalize_column_names(df):
     """Normalize column names to handle different cases and spaces.
