@@ -728,7 +728,7 @@ def main():
             st.rerun()
 
         st.markdown("---")
-        st.markdown("*Developed with Streamlit*")
+        st.markdown("*Developed with AmR ELSaadAnY*")
 
     if page == "Single Scan":
         single_scan_mode(session_counter)
