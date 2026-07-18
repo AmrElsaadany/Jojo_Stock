@@ -36,7 +36,7 @@ BACKUP_PATH = "inventory.csv.bak"
 
 # Set page configuration
 st.set_page_config(
-    page_title="Barcode Scanner Inventory",
+    page_title="Barcode Scanner Inventory_2",
     page_icon="📦",
     layout="wide",
     initial_sidebar_state="expanded"
