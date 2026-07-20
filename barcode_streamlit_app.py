@@ -71,7 +71,7 @@ class ProcessSafeFileLock:
                     return self
                 except (IOError, OSError):
                     if time.time() - start_time >= self.timeout:
-                        raise TimeoutError(f"Could not acquire lock on {self.path} within {self.timeout}s")
+                        raise TimeoutError(f"Could not acquire lock on {self.path} within {self.timeout}s }}")
                     time.sleep(0.1)
                     
         # Try msvcrt (Windows)
