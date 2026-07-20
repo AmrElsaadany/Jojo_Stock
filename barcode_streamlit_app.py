@@ -1,4 +1,4 @@
-#version 3 From Qwen Ai
+#version 3 From Qwen Ai - CORRECTED VERSION
 import streamlit as st
 import pandas as pd
 import os
@@ -6,46 +6,137 @@ import shutil
 import tempfile
 import threading
 from datetime import datetime
+import time
+import platform
+
+# Import proper file locking libraries
+try:
+    import fcntl
+    HAS_FCNTL = True
+except ImportError:
+    HAS_FCNTL = False
 
 try:
-    from filelock import FileLock as RealFileLock
+    import msvcrt
+    HAS_MSVCRT = True
 except ImportError:
-    RealFileLock = None
+    HAS_MSVCRT = False
 
-# Fallback lock if the `filelock` package isn't installed.
-class Timeout(Exception):
-    pass
+# Use portalocker if available (cross-platform)
+try:
+    import portalocker
+    HAS_PORTALOCKER = True
+except ImportError:
+    HAS_PORTALOCKER = False
 
-class FallbackFileLock:
-    _locks_by_path = {}
-    _registry_guard = threading.Lock()
+# Try filelock package
+try:
+    from filelock import FileLock as RealFileLock
+    HAS_FILELOCK = True
+except ImportError:
+    HAS_FILELOCK = False
 
+class ProcessSafeFileLock:
+    """Cross-platform process-safe file lock implementation."""
+    
     def __init__(self, path, timeout=10):
-        self.path = path
+        self.path = os.path.abspath(path)
         self.timeout = timeout
-        with FallbackFileLock._registry_guard:
-            if path not in FallbackFileLock._locks_by_path:
-                FallbackFileLock._locks_by_path[path] = threading.Lock()
-            self._lock = FallbackFileLock._locks_by_path[path]
-
+        self.lock_file = None
+        self.fd = None
+        
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        
     def __enter__(self):
-        acquired = self._lock.acquire(timeout=self.timeout)
-        if not acquired:
-            raise Timeout(f"Could not acquire lock on {self.path} within {self.timeout}s")
-        return self
-
+        # Try real filelock first
+        if HAS_FILELOCK:
+            self.lock_file = RealFileLock(self.path, timeout=self.timeout)
+            self.lock_file.__enter__()
+            return self
+            
+        # Try portalocker
+        if HAS_PORTALOCKER:
+            self.fd = open(self.path, 'w')
+            portalocker.lock(self.fd, portalocker.LOCK_EX, timeout=self.timeout)
+            return self
+            
+        # Try fcntl (Unix/Linux/macOS)
+        if HAS_FCNTL:
+            self.fd = open(self.path, 'w')
+            start_time = time.time()
+            while True:
+                try:
+                    fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    return self
+                except (IOError, OSError):
+                    if time.time() - start_time >= self.timeout:
+                        raise TimeoutError(f"Could not acquire lock on {self.path} within {self.timeout}s")
+                    time.sleep(0.1)
+                    
+        # Try msvcrt (Windows)
+        if HAS_MSVCRT:
+            self.fd = open(self.path, 'w')
+            start_time = time.time()
+            while True:
+                try:
+                    msvcrt.locking(self.fd.fileno(), msvcrt.LK_LOCK, 1)
+                    return self
+                except (IOError, OSError):
+                    if time.time() - start_time >= self.timeout:
+                        raise TimeoutError(f"Could not acquire lock on {self.path} within {self.timeout}s}")
+                    time.sleep(0.1)
+                    
+        # Fallback: Use a simple file-based lock with retry
+        # This is NOT perfect but better than threading lock
+        start_time = time.time()
+        while True:
+            try:
+                # Try to create a lock file atomically
+                if not os.path.exists(self.path):
+                    with open(self.path, 'w') as f:
+                        f.write(str(os.getpid()))
+                    return self
+                if time.time() - start_time >= self.timeout:
+                    raise TimeoutError(f"Could not acquire lock on {self.path} within {self.timeout}s")
+                time.sleep(0.1)
+            except Exception:
+                if time.time() - start_time >= self.timeout:
+                    raise
+                time.sleep(0.1)
+                
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._lock.release()
+        if self.lock_file:
+            self.lock_file.__exit__(exc_type, exc_val, exc_tb)
+        elif self.fd:
+            try:
+                if HAS_PORTALOCKER:
+                    portalocker.unlock(self.fd)
+                elif HAS_FCNTL:
+                    fcntl.flock(self.fd, fcntl.LOCK_UN)
+                elif HAS_MSVCRT:
+                    msvcrt.locking(self.fd.fileno(), msvcrt.LK_UNLCK, 1)
+                self.fd.close()
+            except Exception:
+                pass
+        else:
+            # Clean up lock file for fallback
+            try:
+                if os.path.exists(self.path):
+                    os.remove(self.path)
+            except Exception:
+                pass
         return False
 
-# Use real filelock if available, otherwise fallback
-FileLock = RealFileLock if RealFileLock else FallbackFileLock
+# Use our process-safe lock
+FileLock = ProcessSafeFileLock
 
+# Configuration
 INVENTORY_PATH = "inventory.csv"
-LOCK_PATH = "inventory.csv.lock"
+LOCK_PATH = os.path.abspath(INVENTORY_PATH) + ".lock"  # Absolute path for process safety
 BACKUP_PATH = "inventory.csv.bak"
 SESSION_BACKUP_DIR = "session_backups"
-SESSION_BACKUP_LOCK = "session_backup.lock"
+SESSION_BACKUP_LOCK = os.path.abspath("session_backup.lock")
 
 # Set page configuration
 st.set_page_config(
@@ -123,7 +214,8 @@ def read_csv_with_encoding(file_path):
     encodings = ['utf-8-sig', 'utf-8', 'windows-1256', 'cp1256', 'iso-8859-6', 'latin1']
     for enc in encodings:
         try:
-            df = pd.read_csv(file_path, encoding=enc)
+            # Force barcode column to string to prevent type issues
+            df = pd.read_csv(file_path, encoding=enc, dtype={'Barcode': str} if 'Barcode' in pd.read_csv(file_path, nrows=0).columns else {})
             return df, enc
         except UnicodeDecodeError:
             continue
@@ -137,8 +229,7 @@ def read_csv_with_encoding(file_path):
     raise Exception("Could not read the CSV file with any supported encoding.")
 
 def standardize_columns(df):
-    """Standardize column names to a canonical format to prevent case-sensitivity conflicts 
-    (e.g., 'barcode' vs 'Barcode' vs 'BARCODE')."""
+    """Standardize column names to a canonical format to prevent case-sensitivity conflicts."""
     canonical_mapping = {
         'barcode': 'Barcode',
         'name': 'Name',
@@ -159,6 +250,32 @@ def standardize_columns(df):
             new_columns.append(str(col))
     
     df.columns = new_columns
+    return df
+
+def validate_and_clean_barcodes(df):
+    """Validate barcode column and clean up duplicates."""
+    if 'Barcode' not in df.columns:
+        return df
+        
+    # Ensure Barcode is string and strip whitespace
+    df['Barcode'] = df['Barcode'].astype(str).str.strip()
+    
+    # Remove rows with empty barcodes
+    df = df[df['Barcode'] != '']
+    df = df[df['Barcode'] != 'nan']
+    
+    # Check for duplicates and warn
+    duplicate_mask = df.duplicated(subset=['Barcode'], keep=False)
+    if duplicate_mask.any():
+        dupes = df[duplicate_mask]
+        st.warning(f"⚠️ Found {len(dupes)} duplicate Barcode rows - keeping last occurrence on save")
+        # Show duplicates for debugging if in development mode
+        if st.session_state.get('debug_mode', False):
+            st.dataframe(dupes[['Barcode', 'Name']])
+    
+    # Remove duplicates keeping last occurrence
+    df = df.drop_duplicates(subset=['Barcode'], keep='last')
+    
     return df
 
 def _file_mtime(path):
@@ -182,7 +299,8 @@ def load_inventory_df(force_reload=False):
     
     try:
         df, encoding_used = read_csv_with_encoding(INVENTORY_PATH)
-        df = standardize_columns(df) # Enforce canonical column names
+        df = standardize_columns(df)
+        df = validate_and_clean_barcodes(df)  # Clean duplicates on load
     except Exception as e:
         st.error(f"Error reading file: {e}")
         return None
@@ -194,6 +312,11 @@ def load_inventory_df(force_reload=False):
 
 def _atomic_write_csv(df, encoding):
     """Write df to INVENTORY_PATH atomically, with a rotating backup."""
+    # Clean data before writing
+    df = df.copy()
+    if 'Barcode' in df.columns:
+        df = validate_and_clean_barcodes(df)
+    
     if os.path.exists(INVENTORY_PATH):
         try:
             shutil.copyfile(INVENTORY_PATH, BACKUP_PATH)
@@ -205,7 +328,7 @@ def _atomic_write_csv(df, encoding):
     os.close(fd)
     
     try:
-        # Always save as utf-8-sig for maximum compatibility with Excel and GitHub
+        # Always save as utf-8-sig for maximum compatibility
         df.to_csv(tmp_path, index=False, encoding='utf-8-sig')
     except UnicodeEncodeError as e:
         os.remove(tmp_path)
@@ -235,18 +358,27 @@ def scan_barcode(qty_col, qty_new_col, name_col, barcode_input, session_counter,
             try:
                 df, encoding_used = read_csv_with_encoding(INVENTORY_PATH)
                 df = standardize_columns(df)
+                df = validate_and_clean_barcodes(df)
             except Exception as e:
                 st.error(f"Error reading file: {e}")
                 return None
             
             st.session_state['inventory_encoding'] = encoding_used
+            
+            # Standardize barcode for comparison
+            barcode_input_str = str(barcode_input).strip()
             df['Barcode'] = df['Barcode'].astype(str).str.strip()
-            matching_rows = df[df['Barcode'] == str(barcode_input).strip()]
+            
+            matching_rows = df[df['Barcode'] == barcode_input_str]
             
             if matching_rows.empty:
                 return "not_found"
             
-            current_value = df.loc[df['Barcode'] == str(barcode_input).strip(), qty_new_col].iloc[0]
+            # Get the index of the matching row
+            matching_idx = matching_rows.index[0]
+            
+            # Update the quantity
+            current_value = df.loc[matching_idx, qty_new_col]
             if pd.isna(current_value):
                 new_value = 1
             else:
@@ -255,8 +387,8 @@ def scan_barcode(qty_col, qty_new_col, name_col, barcode_input, session_counter,
                 except (ValueError, TypeError):
                     new_value = 1
                     
-            df.loc[df['Barcode'] == str(barcode_input).strip(), qty_new_col] = new_value
-            updated_product = df[df['Barcode'] == str(barcode_input).strip()].iloc[0].copy()
+            df.loc[matching_idx, qty_new_col] = new_value
+            updated_product = df.loc[matching_idx].copy()
             
             if not _atomic_write_csv(df, 'utf-8-sig'):
                 return None
@@ -420,6 +552,8 @@ def file_management(session_counter):
         if os.path.exists(INVENTORY_PATH):
             df = load_inventory_df()
             if df is not None:
+                # Clean before download
+                df = validate_and_clean_barcodes(df)
                 csv = df.to_csv(index=False, encoding='utf-8-sig')
                 st.download_button(
                     label="📥 Download inventory.csv for GitHub",
@@ -458,8 +592,8 @@ def update_scanned_item_form(session_counter):
         return
 
     st.info("Choose a barcode from scanned session or enter a barcode to update its scanned quantity.")
-    session_barcodes = [str(item['barcode']) for item in st.session_state.get('scanned_items', [])]
-    inventory_barcodes = df['Barcode'].astype(str).unique().tolist()
+    session_barcodes = [str(item['barcode']).strip() for item in st.session_state.get('scanned_items', [])]
+    inventory_barcodes = df['Barcode'].astype(str).str.strip().unique().tolist()
     combined = list(dict.fromkeys(session_barcodes + inventory_barcodes))
 
     if 'manual_barcode_widget_version' not in st.session_state:
@@ -474,15 +608,19 @@ def update_scanned_item_form(session_counter):
 
     chosen_barcode = None
     if barcode_choice and barcode_choice != "-- Enter manually --":
-        chosen_barcode = barcode_choice
+        chosen_barcode = str(barcode_choice).strip()
     elif manual_barcode:
-        chosen_barcode = manual_barcode.strip()
+        chosen_barcode = str(manual_barcode).strip()
 
     if chosen_barcode:
-        df['Barcode'] = df['Barcode'].astype(str).str.strip()
-        matching = df[df['Barcode'] == str(chosen_barcode).strip()]
+        # Clean the DataFrame for matching
+        df_clean = df.copy()
+        df_clean['Barcode'] = df_clean['Barcode'].astype(str).str.strip()
+        
+        matching = df_clean[df_clean['Barcode'] == chosen_barcode]
+        
         if matching.empty:
-            st.error("Barcode not found in inventory.")
+            st.error(f"Barcode '{chosen_barcode}' not found in inventory.")
         else:
             product = matching.iloc[0]
             st.markdown(f"**Product:** {product.get('Name', '')}")
@@ -497,15 +635,26 @@ def update_scanned_item_form(session_counter):
                     with FileLock(LOCK_PATH, timeout=10):
                         fresh_df, encoding_used = read_csv_with_encoding(INVENTORY_PATH)
                         fresh_df = standardize_columns(fresh_df)
+                        fresh_df = validate_and_clean_barcodes(fresh_df)
                         fresh_df['Barcode'] = fresh_df['Barcode'].astype(str).str.strip()
-                        fresh_df.loc[fresh_df['Barcode'] == str(chosen_barcode).strip(), 'Qty_new'] = new_scanned
-                        saved = _atomic_write_csv(fresh_df, 'utf-8-sig')
+                        
+                        # Find matching row
+                        matching_idx = fresh_df[fresh_df['Barcode'] == chosen_barcode].index
+                        
+                        if len(matching_idx) > 0:
+                            fresh_df.loc[matching_idx[0], 'Qty_new'] = new_scanned
+                            saved = _atomic_write_csv(fresh_df, 'utf-8-sig')
+                        else:
+                            st.error(f"Barcode '{chosen_barcode}' not found in current inventory")
+                            saved = False
+                            fresh_df = None
+                            
                 except Exception as e:
                     st.error(f"Error updating inventory: {e}")
                     saved = False
                     fresh_df = None
                     
-                if saved:
+                if saved and fresh_df is not None:
                     st.session_state['inventory_df'] = fresh_df
                     st.session_state['inventory_mtime'] = _file_mtime(INVENTORY_PATH)
                     session_counter.add_item(
@@ -539,6 +688,14 @@ def main():
             session_counter.reset_session()
             st.rerun()
         st.markdown("---")
+        
+        # Debug mode toggle (hidden feature)
+        if st.checkbox("🔧 Debug Mode", value=st.session_state.get('debug_mode', False)):
+            st.session_state.debug_mode = True
+            st.info("Debug mode enabled - duplicate warnings will show details")
+        else:
+            st.session_state.debug_mode = False
+            
         st.markdown("*Developed with AmR ELSaadAnY*")
 
     if page == "Single Scan":
@@ -556,4 +713,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
