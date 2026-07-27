@@ -1,23 +1,28 @@
 import requests
 import streamlit as st
 
-# Retrieve credentials securely from Streamlit secrets TOML
 WEB_APP_URL = st.secrets.get("WEB_APP_URL", "")
-WEB_APP_PASSWORD = st.secrets.get("PASSWORD", "")
+WEB_APP_PASSWORD = st.secrets.get("PASSWORD", "1234")
 
 def fetch_inventory_from_drive():
     """Pulls the latest inventory.csv text data from Google Drive."""
-    if not WEB_APP_URL:
-        st.error("Error: WEB_APP_URL is missing from Streamlit secrets.")
-        return None
-        
     try:
         payload = {
             "action": "getInventory",
             "password": WEB_APP_PASSWORD
         }
         response = requests.post(WEB_APP_URL, json=payload, timeout=15)
-        data = response.json()
+        
+        # DEBUG: Check if response is empty or HTML
+        if not response.text.strip():
+            st.error("Google Drive returned an empty response.")
+            return None
+            
+        try:
+            data = response.json()
+        except Exception:
+            st.error(f"Non-JSON response received from server: {response.text[:200]}")
+            return None
         
         if data.get("status") == "success":
             return data.get("content")
@@ -30,10 +35,6 @@ def fetch_inventory_from_drive():
 
 def push_inventory_to_drive(csv_string):
     """Pushes updated CSV content straight back to Google Drive."""
-    if not WEB_APP_URL:
-        st.error("Error: WEB_APP_URL is missing from Streamlit secrets.")
-        return False
-        
     try:
         payload = {
             "action": "saveInventory",
@@ -41,7 +42,16 @@ def push_inventory_to_drive(csv_string):
             "content": csv_string
         }
         response = requests.post(WEB_APP_URL, json=payload, timeout=20)
-        data = response.json()
+        
+        if not response.text.strip():
+            st.error("Google Drive returned an empty response on save.")
+            return False
+            
+        try:
+            data = response.json()
+        except Exception:
+            st.error(f"Non-JSON response on save: {response.text[:200]}")
+            return False
         
         return data.get("status") == "success"
     except Exception as e:
