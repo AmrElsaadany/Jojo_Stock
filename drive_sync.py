@@ -2,7 +2,7 @@ import requests
 import streamlit as st
 
 WEB_APP_URL = st.secrets.get("WEB_APP_URL", "")
-WEB_APP_PASSWORD = st.secrets.get("PASSWORD", "1234")
+WEB_APP_PASSWORD = st.secrets.get("PASSWORD", "")
 
 def fetch_inventory_from_drive():
     """Pulls the latest inventory.csv text data from Google Drive."""
@@ -11,8 +11,7 @@ def fetch_inventory_from_drive():
             "action": "getInventory",
             "password": WEB_APP_PASSWORD
         }
-        response = requests.post(WEB_APP_URL, json=payload, timeout=15)
-        
+        response = requests.post(WEB_APP_URL, json=payload, timeout=5)
         # DEBUG: Check if response is empty or HTML
         if not response.text.strip():
             st.error("Google Drive returned an empty response.")
@@ -41,7 +40,7 @@ def push_inventory_to_drive(csv_string):
             "password": WEB_APP_PASSWORD,
             "content": csv_string
         }
-        response = requests.post(WEB_APP_URL, json=payload, timeout=20)
+        response = requests.post(WEB_APP_URL, json=payload, timeout=10)
         
         if not response.text.strip():
             st.error("Google Drive returned an empty response on save.")
