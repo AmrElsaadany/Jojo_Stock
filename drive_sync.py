@@ -13,15 +13,15 @@ def fetch_inventory_from_drive():
         }
         response = requests.post(WEB_APP_URL, json=payload, timeout=5)
         # DEBUG: Check if response is empty or HTML
-        if not response.text.strip():
-            st.error("Google Drive returned an empty response.")
-            return None
+        # if not response.text.strip():
+        #     st.error("Google Drive returned an empty response.")
+        #     return None
             
         try:
             data = response.json()
-        except Exception:
-            st.error(f"Non-JSON response received from server: {response.text[:200]}")
-            return None
+        # except Exception:
+        #     st.error(f"Non-JSON response received from server: {response.text[:200]}")
+        #     return None
         
         if data.get("status") == "success":
             return data.get("content")
@@ -42,15 +42,15 @@ def push_inventory_to_drive(csv_string):
         }
         response = requests.post(WEB_APP_URL, json=payload, timeout=10)
         
-        if not response.text.strip():
-            st.error("Google Drive returned an empty response on save.")
-            return False
+        # if not response.text.strip():
+        #     st.error("Google Drive returned an empty response on save.")
+        #     return False
             
         try:
             data = response.json()
-        except Exception:
-            st.error(f"Non-JSON response on save: {response.text[:200]}")
-            return False
+        # except Exception:
+        #     st.error(f"Non-JSON response on save: {response.text[:200]}")
+        #     return False
         
         return data.get("status") == "success"
     except Exception as e:
