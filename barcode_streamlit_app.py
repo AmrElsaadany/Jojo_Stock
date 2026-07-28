@@ -411,6 +411,9 @@ def scan_barcode(qty_col, qty_new_col, name_col, barcode_input, session_counter,
         st.error(f"Error updating inventory: {e}")
         return None
 
+import streamlit as st
+import streamlit.components.v1 as components  # Add this import
+
 def single_scan_mode(session_counter):
     st.header("📱 Single Scan Mode")
     df = load_inventory_df()
@@ -426,7 +429,31 @@ def single_scan_mode(session_counter):
     with st.form("single_scan_form", clear_on_submit=True):
         col1, col2 = st.columns([3, 1])
         with col1:
-            barcode_input = st.text_input("Scan or enter barcode:", placeholder="Scan or type barcode and press Enter...")
+            # 1. Added a 'key' to the input (best practice for forms)
+            barcode_input = st.text_input(
+                "Scan or enter barcode:", 
+                placeholder="Scan or type barcode and press Enter...",
+                key="barcode_scanner_input" 
+            )
+            
+            # 2. Inject JavaScript to focus the input based on its aria-label
+            components.html(
+                """
+                <script>
+                    // Streamlit runs components in an iframe, so we need 'window.parent'
+                    const inputs = window.parent.document.querySelectorAll('input');
+                    // Find the input with the matching aria-label
+                    for (let i = 0; i < inputs.length; i++) {
+                        if (inputs[i].getAttribute('aria-label') === 'Scan or enter barcode:') {
+                            inputs[i].focus();
+                            break;
+                        }
+                    }
+                </script>
+                """,
+                height=0, width=0
+            )
+
         with col2:
             st.write("")
             submitted = st.form_submit_button("Scan Item", type="primary", use_container_width=True)
@@ -448,7 +475,7 @@ def single_scan_mode(session_counter):
             col2.metric("Barcode", updated_product['Barcode'])
             col3.metric("Old Scanned Qty", int(updated_product.get('Qty_new', 0)))
             col4.metric("New Scanned Qty", int(new_value))
-
+            
 def continuous_scan_mode(session_counter):
     st.header("🔄 Continuous Scan Mode")
     df = load_inventory_df()
