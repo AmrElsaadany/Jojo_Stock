@@ -632,7 +632,7 @@ def update_scanned_item_form(session_counter):
 
     col1, col2 = st.columns([2, 1])
     with col1:
-        barcode_choice = st.selectbox("Select barcode (or choose 'Enter manually' to type):", options=["-- Enter manually --"] + combined)
+        barcode_choice = st.selectbox("Select barcode (or choose 'Enter manually2' to type):", options=["-- Enter manually --"] + combined)
     with col2:
         manual_barcode = st.text_input("Or enter barcode:", key=manual_input_key)
            
