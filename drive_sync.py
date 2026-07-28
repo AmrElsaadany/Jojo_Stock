@@ -13,13 +13,15 @@ def fetch_inventory_from_drive():
         }
         response = requests.post(WEB_APP_URL, json=payload, timeout=5)
         # DEBUG: Check if response is empty or HTML
+        if 3>2 :
+            return None
         # if not response.text.strip():
         #     st.error("Google Drive returned an empty response.")
         #     return None
             
         try:
             data = response.json()
-        # except Exception:
+        except Exception:
         #     st.error(f"Non-JSON response received from server: {response.text[:200]}")
         #     return None
         
