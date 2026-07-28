@@ -475,7 +475,7 @@ def single_scan_mode(session_counter):
             col2.metric("Barcode", updated_product['Barcode'])
             col3.metric("Old Scanned Qty", int(updated_product.get('Qty_new', 0)))
             col4.metric("New Scanned Qty", int(new_value))
-            
+
 def continuous_scan_mode(session_counter):
     st.header("🔄 Continuous Scan Mode")
     df = load_inventory_df()
@@ -635,6 +635,24 @@ def update_scanned_item_form(session_counter):
         barcode_choice = st.selectbox("Select barcode (or choose 'Enter manually' to type):", options=["-- Enter manually --"] + combined)
     with col2:
         manual_barcode = st.text_input("Or enter barcode:", key=manual_input_key)
+           
+        # 2. Inject JavaScript to focus the input based on its aria-label
+        components.html(
+            """
+            <script>
+                // Streamlit runs components in an iframe, so we need 'window.parent'
+                const inputs = window.parent.document.querySelectorAll('input');
+                // Find the input with the matching aria-label
+                for (let i = 0; i < inputs.length; i++) {
+                    if (inputs[i].getAttribute('aria-label') === 'Scan or enter barcode:') {
+                        inputs[i].focus();
+                        break;
+                    }
+                }
+            </script>
+            """,
+            height=0, width=0
+        )
 
     chosen_barcode = None
     if barcode_choice and barcode_choice != "-- Enter manually --":
