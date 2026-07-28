@@ -644,7 +644,7 @@ def update_scanned_item_form(session_counter):
                 const inputs = window.parent.document.querySelectorAll('input');
                 // Find the input with the matching aria-label
                 for (let i = 0; i < inputs.length; i++) {
-                    if (inputs[i].getAttribute('aria-label') === 'or enter barcode:') {
+                    if (inputs[i].getAttribute('aria-label') === 'Or enter barcode:') {
                         inputs[i].focus();
                         break;
                     }
