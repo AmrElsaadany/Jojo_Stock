@@ -632,7 +632,7 @@ def update_scanned_item_form(session_counter):
 
     col1, col2 = st.columns([2, 1])
     with col1:
-        barcode_choice = st.selectbox("Select barcode (or choose 'Enter manually2' to type):", options=["-- Enter manually --"] + combined)
+        barcode_choice = st.selectbox("Select barcode (or choose 'Enter manually' to type):", options=["-- Enter manually --"] + combined)
     with col2:
         manual_barcode = st.text_input("Or enter barcode:", key=manual_input_key)
            
@@ -644,7 +644,7 @@ def update_scanned_item_form(session_counter):
                 const inputs = window.parent.document.querySelectorAll('input');
                 // Find the input with the matching aria-label
                 for (let i = 0; i < inputs.length; i++) {
-                    if (inputs[i].getAttribute('aria-label') === 'Scan or enter barcode:') {
+                    if (inputs[i].getAttribute('aria-label') === 'or enter barcode:') {
                         inputs[i].focus();
                         break;
                     }
