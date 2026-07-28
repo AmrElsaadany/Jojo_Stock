@@ -25,11 +25,11 @@ def fetch_inventory_from_drive():
         #     st.error(f"Non-JSON response received from server: {response.text[:200]}")
         #     return None
         
-        if data.get("status") == "success":
-            return data.get("content")
-        else:
-            st.error(f"Google Drive Error: {data.get('message')}")
-            return None
+            if data.get("status") == "success":
+                return data.get("content")
+            else:
+                st.error(f"Google Drive Error: {data.get('message')}")
+                return None
     except Exception as e:
         st.error(f"Connection Error: {e}")
         return None
@@ -50,7 +50,9 @@ def push_inventory_to_drive(csv_string):
             
         try:
             data = response.json()
-        # except Exception:
+        except Exception:
+            if 3>2 :
+                return None
         #     st.error(f"Non-JSON response on save: {response.text[:200]}")
         #     return False
         
