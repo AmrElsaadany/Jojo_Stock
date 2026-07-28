@@ -8,8 +8,8 @@ import threading
 from datetime import datetime
 import time
 import platform
-
-
+import io
+import drive_sync  # Import our external module
 
 # Import proper file locking libraries
 try:
@@ -286,58 +286,51 @@ def _file_mtime(path):
     except OSError:
         return None
 
+import io
+import drive_sync  # External module for Google Drive communication
+
 def load_inventory_df(force_reload=False):
-    """Load inventory.csv, cached in session_state."""
-    if not os.path.exists(INVENTORY_PATH):
-        st.error(f"File '{INVENTORY_PATH}' not found!")
-        return None
-    
-    current_mtime = _file_mtime(INVENTORY_PATH)
-    cached_mtime = st.session_state.get('inventory_mtime')
+    """Load inventory.csv from Google Drive, cached in session_state."""
     cached_df = st.session_state.get('inventory_df')
     
-    if (not force_reload) and cached_df is not None and cached_mtime == current_mtime:
+    if (not force_reload) and cached_df is not None:
         return cached_df.copy()
     
+    # 1. Fetch the raw CSV string from Google Drive via external module
+    csv_content = drive_sync.fetch_inventory_from_drive()
+    if not csv_content:
+        return None
+    
     try:
-        df, encoding_used = read_csv_with_encoding(INVENTORY_PATH)
+        # 2. Read using pandas StringIO, enforcing Barcode as string to prevent loss of leading zeros
+        df = pd.read_csv(io.StringIO(csv_content), dtype={'Barcode': str})
         df = standardize_columns(df)
         df = validate_and_clean_barcodes(df)  # Clean duplicates on load
     except Exception as e:
-        st.error(f"Error reading file: {e}")
+        st.error(f"Error reading or parsing inventory data: {e}")
         return None
     
+    # 3. Cache the dataframe in session state
     st.session_state['inventory_df'] = df
-    st.session_state['inventory_mtime'] = current_mtime
-    st.session_state['inventory_encoding'] = encoding_used
+    st.session_state['inventory_encoding'] = 'utf-8'
     return df.copy()
 
 def _atomic_write_csv(df, encoding):
-    """Write df to INVENTORY_PATH atomically, with a rotating backup."""
-    # Clean data before writing
+    """Writes updated DataFrame and instantly syncs it to Google Drive using the external module."""
     df = df.copy()
     if 'Barcode' in df.columns:
         df = validate_and_clean_barcodes(df)
+        
+    # Generate CSV string in memory
+    csv_string = df.to_csv(index=False, encoding='utf-8-sig')
     
-    if os.path.exists(INVENTORY_PATH):
-        try:
-            shutil.copyfile(INVENTORY_PATH, BACKUP_PATH)
-        except OSError as e:
-            st.warning(f"Could not create backup before saving: {e}")
-    
-    dir_name = os.path.dirname(os.path.abspath(INVENTORY_PATH)) or "."
-    fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix=".csv.tmp")
-    os.close(fd)
-    
-    try:
-        # Always save as utf-8-sig for maximum compatibility
-        df.to_csv(tmp_path, index=False, encoding='utf-8-sig')
-    except UnicodeEncodeError as e:
-        os.remove(tmp_path)
-        st.error(f"Could not encode data: {e}. Consider cleaning special characters.")
+    # Push live to Google Drive via module
+    success = drive_sync.push_inventory_to_drive(csv_string)
+    if not success:
+        st.warning("⚠️ Changes applied locally, but failed to sync to Google Drive!")
         return False
         
-    os.replace(tmp_path, INVENTORY_PATH)
+    st.session_state['inventory_df'] = df
     return True
 
 def save_inventory_data(df):
