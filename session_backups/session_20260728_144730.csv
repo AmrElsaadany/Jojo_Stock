@@ -1,0 +1,4 @@
+﻿barcode,product_name,old_qty,new_qty,action,timestamp
+4009,ريد نايت 122,0.0,2,scan,2026-07-28 15:05:14
+4009,ريد نايت 122,0.0,3,scan,2026-07-28 15:05:23
+4009,ريد نايت 122,3.0,1,manual_update,2026-07-28 15:07:43
