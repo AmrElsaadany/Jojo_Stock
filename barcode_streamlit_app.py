@@ -344,7 +344,7 @@ def _atomic_write_csv(df, encoding):
         df.to_csv(tmp_path, index=False, encoding='utf-8-sig')
 
         # Generate CSV string in memory
-        csv_string = df.to_csv(tmp_path,index=False, encoding='utf-8-sig'
+        csv_string = df.to_csv(tmp_path,index=False, encoding='utf-8-sig')
     except UnicodeEncodeError as e:
         os.remove(tmp_path)
         st.error(f"Could not encode data: {e}. Consider cleaning special characters.")
