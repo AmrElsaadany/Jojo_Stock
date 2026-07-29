@@ -1,4 +1,5 @@
 #version 3 From Qwen Ai - CORRECTED VERSION
+#
 import streamlit as st
 import pandas as pd
 import os
@@ -8,9 +9,8 @@ import threading
 from datetime import datetime
 import time
 import platform
-
-
-
+import io
+import drive_sync  # External module for Google Drive communication
 
 # Import proper file locking libraries
 try:
@@ -287,8 +287,11 @@ def _file_mtime(path):
     except OSError:
         return None
 
+# import io
+# import drive_sync  # External module for Google Drive communication
+
 def load_inventory_df(force_reload=False):
-    """Load inventory.csv, cached in session_state."""
+    """Load inventory.csv from Google Drive, cached in session_state."""
     if not os.path.exists(INVENTORY_PATH):
         st.error(f"File '{INVENTORY_PATH}' not found!")
         return None
@@ -300,6 +303,11 @@ def load_inventory_df(force_reload=False):
     if (not force_reload) and cached_df is not None and cached_mtime == current_mtime:
         return cached_df.copy()
     
+    # 1. Fetch the raw CSV string from Google Drive via external module
+    csv_content = drive_sync.fetch_inventory_from_drive()
+    if not csv_content:
+        return None
+    
     try:
         df, encoding_used = read_csv_with_encoding(INVENTORY_PATH)
         df = standardize_columns(df)
@@ -308,6 +316,7 @@ def load_inventory_df(force_reload=False):
         st.error(f"Error reading file: {e}")
         return None
     
+    # 3. Cache the dataframe in session state
     st.session_state['inventory_df'] = df
     st.session_state['inventory_mtime'] = current_mtime
     st.session_state['inventory_encoding'] = encoding_used
@@ -333,6 +342,9 @@ def _atomic_write_csv(df, encoding):
     try:
         # Always save as utf-8-sig for maximum compatibility
         df.to_csv(tmp_path, index=False, encoding='utf-8-sig')
+
+        # Generate CSV string in memory
+        csv_string = df.to_csv(tmp_path,index=False, encoding='utf-8-sig'
     except UnicodeEncodeError as e:
         os.remove(tmp_path)
         st.error(f"Could not encode data: {e}. Consider cleaning special characters.")

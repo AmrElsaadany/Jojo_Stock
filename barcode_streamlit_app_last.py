@@ -10,7 +10,7 @@ from datetime import datetime
 import time
 import platform
 import io
-import drive_sync  # Import our external module
+import drive_sync  # External module for Google Drive communication
 
 # Import proper file locking libraries
 try:
@@ -287,14 +287,20 @@ def _file_mtime(path):
     except OSError:
         return None
 
-import io
-import drive_sync  # External module for Google Drive communication
+# import io
+# import drive_sync  # External module for Google Drive communication
 
 def load_inventory_df(force_reload=False):
     """Load inventory.csv from Google Drive, cached in session_state."""
+    if not os.path.exists(INVENTORY_PATH):
+        st.error(f"File '{INVENTORY_PATH}' not found!")
+        return None
+    
+    current_mtime = _file_mtime(INVENTORY_PATH)
+    cached_mtime = st.session_state.get('inventory_mtime')
     cached_df = st.session_state.get('inventory_df')
     
-    if (not force_reload) and cached_df is not None:
+    if (not force_reload) and cached_df is not None and cached_mtime == current_mtime:
         return cached_df.copy()
     
     # 1. Fetch the raw CSV string from Google Drive via external module
